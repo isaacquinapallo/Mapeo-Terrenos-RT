@@ -1,5 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+
     <application
+        <uses-library android:name="org.apache.http.legacy" android:required="false"/>
+    
         android:label="mapeo_terrenos_rt"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
