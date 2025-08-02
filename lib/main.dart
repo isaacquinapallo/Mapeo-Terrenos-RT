@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'pages/login_page.dart';
-import 'pages/home_page.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart'; // ✅ Importar dotenv
+import 'pages/login.dart';
+import 'pages/home.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await dotenv.load(fileName: 'assets/.env');
+
   await Supabase.initialize(
-    url: 'https://..co',
-    anonKey: '..qC---',
+    url: dotenv.env['SUPABASE_URL']!,       
+    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
   );
+
   runApp(MyApp());
 }
 
