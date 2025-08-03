@@ -14,6 +14,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   final usernameController = TextEditingController();
+  final companyNameController = TextEditingController();
+  final companyCodeController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   bool isLogin = true;
@@ -34,6 +36,8 @@ class _LoginScreenState extends State<LoginScreen> {
     final email = emailController.text.trim();
     final password = passwordController.text.trim();
     final username = usernameController.text.trim();
+    final companyName = companyNameController.text.trim();
+    final companyCode = companyCodeController.text.trim();
 
     try {
       if (isLogin) {
@@ -42,11 +46,11 @@ class _LoginScreenState extends State<LoginScreen> {
           password: password,
         );
 
-        if (session.user != null) {
+        final user = session.user;
+        if (user != null) {
           showMessage("¡Inicio de sesión exitoso!");
 
-          // Verifica si ya tiene fila en la tabla users, si no la crea
-          final userId = session.user!.id;
+          final userId = user.id;
           final existingUser = await supabase
               .from('users')
               .select()
@@ -54,30 +58,74 @@ class _LoginScreenState extends State<LoginScreen> {
               .maybeSingle();
 
           if (existingUser == null) {
-            await supabase.from('users').insert({
-              'id_user': userId,
-              'email': email,
-              'username': username.isNotEmpty ? username : email.split('@')[0],
-            });
+            final resolvedUsername = username.isNotEmpty
+                ? username
+                : email.split('@')[0];
+
+            await supabase.rpc(
+              'registrar_usuario',
+              params: {
+                'p_id_user': userId,
+                'p_email': email,
+                'p_username': resolvedUsername,
+                'p_empresa_id': null,
+
+              },
+            );
           }
 
           Navigator.pushReplacementNamed(context, '/home');
         }
       } else {
+        // Validar nombre y código de empresa
+        final result = await supabase.rpc(
+          'verificar_codigo_empresa',
+          params: {'nombre_empresa': companyName, 'codigo': companyCode},
+        );
+
+        final empresaId = result?.toString();
+
+        if (empresaId == null ||
+            empresaId.trim().isEmpty ||
+            empresaId == 'null') {
+          showMessage(
+            "Nombre o código de empresa inválido. Contáctenos al +593 99 525 6404",
+          );
+          return;
+        }
+
         final response = await supabase.auth.signUp(
           email: email,
           password: password,
         );
 
-        if (response.user != null) {
-          // Actualizar el display name (si está disponible)
-          await supabase.auth.updateUser(
-            UserAttributes(data: {'full_name': username}),
+        final newUser = response.user;
+        if (newUser != null) {
+          await supabase.rpc(
+            'registrar_usuario',
+            params: {
+              'p_id_user': newUser.id,
+              'p_email': email,
+              'p_username': username.isNotEmpty
+                  ? username
+                  : email.split('@')[0],
+              'p_empresa_id': empresaId,
+            },
           );
 
           showMessage(
             "¡Registro exitoso! Revisa tu correo y confirma tu cuenta antes de iniciar sesión.",
           );
+
+          await Future.delayed(const Duration(seconds: 5));
+          setState(() {
+            isLogin = true;
+            emailController.clear();
+            passwordController.clear();
+            usernameController.clear();
+            companyNameController.clear();
+            companyCodeController.clear();
+          });
         } else {
           showMessage("No se pudo crear el usuario.");
         }
@@ -153,6 +201,31 @@ class _LoginScreenState extends State<LoginScreen> {
                             validator: (value) =>
                                 (value == null || value.isEmpty)
                                 ? 'Ingrese un nombre de usuario'
+                                : null,
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: companyNameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Nombre de la empresa',
+                              prefixIcon: Icon(Icons.business),
+                            ),
+                            validator: (value) =>
+                                (value == null || value.isEmpty)
+                                ? 'Ingrese el nombre de la empresa'
+                                : null,
+                          ),
+                          const SizedBox(height: 16),
+
+                          TextFormField(
+                            controller: companyCodeController,
+                            decoration: const InputDecoration(
+                              labelText: 'Código de la empresa',
+                              prefixIcon: Icon(Icons.verified_user),
+                            ),
+                            validator: (value) =>
+                                (value == null || value.isEmpty)
+                                ? 'Ingrese el código de la empresa'
                                 : null,
                           ),
                           const SizedBox(height: 16),

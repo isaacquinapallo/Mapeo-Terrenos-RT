@@ -1,36 +1,40 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
   <base href="$FLUTTER_BASE_HREF">
-
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
-
-  <!-- iOS meta tags & icons -->
+  <meta name="description" content="App de mapeo de terrenos en tiempo real">
+  
+  <!-- iOS Meta -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="mapeo_terrenos_rt">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
-
-  <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
-
-  <title>mapeo_terrenos_rt</title>
   <link rel="manifest" href="manifest.json">
+  <title>mapeo_terrenos_rt</title>
+
+  <!-- ✅ API Key en archivo separado para no exponerla directamente -->
+  <script src="env.js"></script>
+
+  <!-- ✅ Cargar Google Maps dinámicamente -->
+  <script>
+    function initMap() {}
+
+    (function () {
+      if (!window.env || !window.env.GOOGLE_API_KEY) {
+        console.error("Google API Key no definida.");
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${window.env.GOOGLE_API_KEY}&callback=initMap`;
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    })();
+  </script>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>

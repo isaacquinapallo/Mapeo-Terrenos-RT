@@ -1,151 +1,400 @@
+// Página principal de la aplicación
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:geolocator/geolocator.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:async';
-import 'dart:math' as math;
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'proyectos.dart';
+import 'mapa.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomePage extends StatefulWidget {
+  const HomePage({super.key});
+
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<HomePage> createState() => _HomePageState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  List<LatLng> puntosTerreno = [];
-  Polygon? poligono;
-  double area = 0.0;
-
-  final supabase = Supabase.instance.client;
-  Timer? _locationTimer;
-  final Duration updateInterval = Duration(seconds: 10);
-
-  GoogleMapController? mapController;
-  LatLng? userPosition;
+class _HomePageState extends State<HomePage> {
+  int _paginaActual = 0;
+  String? userIdActual;
+  String? userEmailActual;
 
   @override
   void initState() {
     super.initState();
-    getUserLocation();
+    userIdActual = Supabase.instance.client.auth.currentUser?.id;
+    userEmailActual = Supabase.instance.client.auth.currentUser?.email;
+    _registrarUsuarioSiNoExiste();
+    setState(() {});
   }
 
-  Future<void> getUserLocation() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      await Geolocator.openLocationSettings();
-      return;
+  Future<void> _registrarUsuarioSiNoExiste() async {
+    if (userIdActual == null || userEmailActual == null) return;
+
+    final uid = userIdActual!;
+    final email = userEmailActual!;
+    final username = email.split('@').first;
+
+    try {
+      final existe = await Supabase.instance.client
+          .from('users')
+          .select('id_user')
+          .eq('id_user', uid)
+          .maybeSingle();
+
+      if (existe == null) {
+        await Supabase.instance.client.rpc(
+          'registrar_usuario',
+          params: {
+            'p_id_user': uid,
+            'p_email': email,
+            'p_username': username,
+            'p_empresa_id': null,
+          },
+        );
+
+        print('✅ Usuario registrado en la tabla users');
+      } else {
+        print('ℹ️ Usuario ya estaba registrado');
+      }
+    } catch (e) {
+      print('❌ Error registrando usuario: $e');
     }
-
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      permission = await Geolocator.requestPermission();
-    }
-
-    final position = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
-    );
-
-    setState(() {
-      userPosition = LatLng(position.latitude, position.longitude);
-    });
-
-    // Iniciar subida periódica
-    _locationTimer = Timer.periodic(updateInterval, (_) async {
-      final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-
-      await Supabase.instance.client.from('ubicaciones').insert({
-        'usuario_id': Supabase.instance.client.auth.currentUser!.id,
-        'latitud': pos.latitude,
-        'longitud': pos.longitude,
-        'timestamp': DateTime.now().toIso8601String(),
-      });
-
-      print("Ubicación enviada: ${pos.latitude}, ${pos.longitude}");
-    });
   }
 
-  double calcularArea(List<LatLng> puntos) {
-    if (puntos.length < 3) return 0.0;
-    double area = 0.0;
-
-    for (int i = 0; i < puntos.length; i++) {
-      final j = (i + 1) % puntos.length;
-      area += puntos[i].latitude * puntos[j].longitude;
-      area -= puntos[j].latitude * puntos[i].longitude;
-    }
-
-    return (area.abs() * 111_139 * 111_139 / 2); // conversión aproximada a m²
+  Future<List<dynamic>> _obtenerMisProyectos(String userIdActual) async {
+    if (userIdActual == null) return <dynamic>[];
+    return await Supabase.instance.client
+        .from('territories')
+        .select()
+        .eq('creador', userIdActual)
+        .order('created_at', ascending: false);
   }
 
-  @override
-  void dispose() {
-    _locationTimer?.cancel();
-    super.dispose();
+  Future<List<dynamic>> _obtenerInvitaciones(String? userIdActual) async {
+    if (userIdActual == null) return <dynamic>[];
+
+    final response = await Supabase.instance.client
+        .from('territories')
+        .select()
+        .filter('participantes', 'cs', '["$userIdActual"]')
+        .neq('creador', userIdActual)
+        .neq('finalizado', true)
+        .order('created_at', ascending: false);
+
+    return response;
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = supabase.auth.currentUser;
-
+    if (userIdActual == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
     return Scaffold(
       appBar: AppBar(
-        title: Text('Mapa de Terreno'),
+        title: const Text('Mapeo de Terrenos RT'),
         actions: [
           IconButton(
-            icon: Icon(Icons.logout),
+            icon: const Icon(Icons.refresh),
+            onPressed: () => setState(() {}),
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
             onPressed: () async {
-              await supabase.auth.signOut();
-              Navigator.pushReplacementNamed(context, '/login');
+              try {
+                await FlutterForegroundTask.stopService();
+
+                final currentUserId = userIdActual;
+                if (currentUserId != null) {
+                  await Supabase.instance.client
+                      .from('locations')
+                      .update({'status': false})
+                      .eq('id_user', currentUserId);
+                }
+
+                await Supabase.instance.client.auth.signOut();
+                if (context.mounted) {
+                  Navigator.pushReplacementNamed(context, '/login');
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Error al cerrar sesión. Intente nuevamente.',
+                      ),
+                    ),
+                  );
+                }
+              }
             },
           ),
         ],
       ),
-      body: userPosition == null
-    ? Center(child: CircularProgressIndicator())
-    : Column(
+      body: IndexedStack(
+        index: _paginaActual,
         children: [
-          Expanded(
-            child: GoogleMap(
-              onMapCreated: (controller) => mapController = controller,
-              initialCameraPosition: CameraPosition(
-                target: userPosition!,
-                zoom: 17,
-              ),
-              myLocationEnabled: true,
-              myLocationButtonEnabled: true,
-              onTap: (LatLng latLng) {
-                setState(() {
-                  puntosTerreno.add(latLng);
-                  area = calcularArea(puntosTerreno);
-
-                  poligono = Polygon(
-                    polygonId: PolygonId('terreno'),
-                    points: puntosTerreno,
-                    strokeColor: Colors.green,
-                    strokeWidth: 2,
-                    fillColor: Colors.green.withOpacity(0.3),
-                  );
-                });
-              },
-              polygons: poligono != null ? {poligono!} : {},
-              markers: puntosTerreno
-                  .map((p) =>
-                      Marker(markerId: MarkerId(p.toString()), position: p))
-                  .toSet(),
-            ),
-          ),
-          if (puntosTerreno.length >= 3)
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Text(
-                'Área estimada: ${area.toStringAsFixed(2)} m²',
-                style: TextStyle(fontSize: 16),
-              ),
-            ),
+          _buildMisProyectos(userIdActual!),
+          _buildInvitaciones(userIdActual!),
+          _buildUsuariosMapa(),
+          const CrearProyectoPage(),
         ],
       ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _paginaActual,
+        onTap: (index) => setState(() => _paginaActual = index),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.folder),
+            label: 'Mis Proyectos',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.mail),
+            label: 'Invitaciones',
+          ),
+          BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Mapa'),
+          BottomNavigationBarItem(icon: Icon(Icons.add), label: 'Nuevo'),
+        ],
+        type: BottomNavigationBarType.fixed,
+      ),
     );
+  }
+
+  Future<List<Map<String, dynamic>>> _obtenerUbicacionesUsuarios() async {
+    final response = await Supabase.instance.client
+        .from('users')
+        .select('id_user, username, latitude, longitude, status')
+        .eq('status', true);
+
+    final data = response as List<dynamic>? ?? [];
+    return data
+        .where((item) => item['latitude'] != null && item['longitude'] != null)
+        .map<Map<String, dynamic>>((item) {
+          return {
+            'id_user': item['id_user'],
+            'username': item['username'] ?? '',
+            'latitude': item['latitude'],
+            'longitude': item['longitude'],
+            'status': item['status'],
+          };
+        })
+        .toList();
+  }
+
+  Widget _buildUsuariosMapa() {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _obtenerUbicacionesUsuarios(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final usuarios = snapshot.data!;
+        return MapaPage(
+          proyectoId: 'usuarios_mapa',
+          colaborativo: false,
+          usuarios: usuarios,
+        );
+      },
+    );
+  }
+
+  Widget _buildMisProyectos(String userIdActual) {
+    return FutureBuilder<List<dynamic>>(
+      future: _obtenerMisProyectos(userIdActual),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final territorios = snapshot.data!;
+        if (territorios.isEmpty) {
+          return const Center(child: Text('No tienes proyectos aún'));
+        }
+
+        final proyectosEnProceso = territorios
+            .where((t) => t['finalizado'] != true)
+            .toList();
+        final proyectosFinalizados = territorios
+            .where((t) => t['finalizado'] == true)
+            .toList();
+
+        return ListView(
+          children: [
+            if (proyectosEnProceso.isNotEmpty) ...[
+              const Padding(
+                padding: EdgeInsets.all(12.0),
+                child: Text(
+                  'Proyectos en proceso',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              ...proyectosEnProceso.map(
+                (territorio) => _buildProyectoCard(
+                  territorio,
+                  esFinalizado: false,
+                  context: context,
+                ),
+              ),
+            ],
+            if (proyectosFinalizados.isNotEmpty) ...[
+              const Padding(
+                padding: EdgeInsets.all(12.0),
+                child: Text(
+                  'Proyectos finalizados',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              ...proyectosFinalizados.map(
+                (territorio) => _buildProyectoCard(
+                  territorio,
+                  esFinalizado: true,
+                  context: context,
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildProyectoCard(
+    Map<String, dynamic> territorio, {
+    required bool esFinalizado,
+    required BuildContext context,
+  }) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: ListTile(
+        title: Text(territorio['nombre'] ?? ''),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Propiedades: ${territorio['properties'] ?? ''}'),
+            Text(
+              'Colaborativo: ${territorio['colaborativo'] == true ? 'Sí' : 'No'}',
+            ),
+            Text(
+              'Área: ${territorio['area'] != null ? '${(territorio['area'] as num).toStringAsFixed(2)} m²' : 'No calculada'}',
+            ),
+            Text(
+              'Fecha creación: ${_formatearFecha(territorio['created_at'])}',
+            ),
+            if (territorio['imagen_poligono'] != null &&
+                (territorio['imagen_poligono'] as String).isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    territorio['imagen_poligono'],
+                    height: 120,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) =>
+                        const Text('No se pudo cargar la imagen'),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        isThreeLine: true,
+        trailing: esFinalizado
+            ? const Icon(Icons.lock, color: Colors.grey)
+            : IconButton(
+                icon: const Icon(Icons.map),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => MapaPage(
+                        proyectoId: territorio['id'],
+                        colaborativo: territorio['colaborativo'] ?? false,
+                      ),
+                    ),
+                  );
+                },
+              ),
+      ),
+    );
+  }
+
+  Widget _buildInvitaciones(String userIdActual) {
+    return FutureBuilder<List<dynamic>>(
+      future: _obtenerInvitaciones(userIdActual),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final territorios = snapshot.data!;
+        if (territorios.isEmpty) {
+          return const Center(child: Text('No tienes invitaciones aún'));
+        }
+
+        return ListView.builder(
+          itemCount: territorios.length,
+          itemBuilder: (context, index) {
+            final territorio = territorios[index];
+            return Card(
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: ListTile(
+                title: Text(territorio['nombre'] ?? ''),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Propiedades: ${territorio['propieties'] ?? ''}'),
+                    Text(
+                      'Colaborativo: ${territorio['colaborativo'] == true ? 'Sí' : 'No'}',
+                    ),
+                    Text(
+                      'Área: ${territorio['area'] != null ? '${(territorio['area'] as num).toStringAsFixed(2)} m²' : 'No calculada'}',
+                    ),
+                    Text(
+                      'Fecha creación: ${_formatearFecha(territorio['created_at'])}',
+                    ),
+                    if (territorio['imagen_poligono'] != null &&
+                        (territorio['imagen_poligono'] as String).isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            territorio['imagen_poligono'],
+                            height: 120,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) =>
+                                const Text('No se pudo cargar la imagen'),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                isThreeLine: true,
+                trailing: IconButton(
+                  icon: const Icon(Icons.map),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => MapaPage(
+                          proyectoId: territorio['id'],
+                          colaborativo: territorio['colaborativo'] ?? false,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  String _formatearFecha(String? fecha) {
+    if (fecha == null) return '';
+    final date = DateTime.tryParse(fecha);
+    if (date == null) return '';
+    return DateFormat('dd/MM/yyyy').format(date);
   }
 }
