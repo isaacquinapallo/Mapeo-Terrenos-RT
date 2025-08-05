@@ -135,7 +135,6 @@ class _HomePageState extends State<HomePage> {
         children: [
           _buildMisProyectos(userIdActual!),
           _buildInvitaciones(userIdActual!),
-          _buildUsuariosMapa(),
           const CrearProyectoPage(),
         ],
       ),
@@ -151,7 +150,7 @@ class _HomePageState extends State<HomePage> {
             icon: Icon(Icons.mail),
             label: 'Invitaciones',
           ),
-          BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Mapa'),
+
           BottomNavigationBarItem(icon: Icon(Icons.add), label: 'Nuevo'),
         ],
         type: BottomNavigationBarType.fixed,
@@ -268,7 +267,7 @@ class _HomePageState extends State<HomePage> {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Propiedades: ${territorio['properties'] ?? ''}'),
+            Text('Descripción: ${territorio['properties'] ?? ''}'),
             Text(
               'Colaborativo: ${territorio['colaborativo'] == true ? 'Sí' : 'No'}',
             ),
@@ -340,7 +339,7 @@ class _HomePageState extends State<HomePage> {
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Propiedades: ${territorio['propieties'] ?? ''}'),
+                    Text('Descripción: ${territorio['propieties'] ?? ''}'),
                     Text(
                       'Colaborativo: ${territorio['colaborativo'] == true ? 'Sí' : 'No'}',
                     ),

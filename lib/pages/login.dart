@@ -8,14 +8,14 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
+
+
 class _LoginScreenState extends State<LoginScreen> {
   final supabase = Supabase.instance.client;
 
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   final usernameController = TextEditingController();
-  final companyNameController = TextEditingController();
-  final companyCodeController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   bool isLogin = true;
@@ -23,9 +23,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool obscurePassword = true;
 
   void showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> authenticate() async {
@@ -36,8 +34,6 @@ class _LoginScreenState extends State<LoginScreen> {
     final email = emailController.text.trim();
     final password = passwordController.text.trim();
     final username = usernameController.text.trim();
-    final companyName = companyNameController.text.trim();
-    final companyCode = companyCodeController.text.trim();
 
     try {
       if (isLogin) {
@@ -51,6 +47,7 @@ class _LoginScreenState extends State<LoginScreen> {
           showMessage("¡Inicio de sesión exitoso!");
 
           final userId = user.id;
+
           final existingUser = await supabase
               .from('users')
               .select()
@@ -62,38 +59,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 ? username
                 : email.split('@')[0];
 
-            await supabase.rpc(
-              'registrar_usuario',
-              params: {
-                'p_id_user': userId,
-                'p_email': email,
-                'p_username': resolvedUsername,
-                'p_empresa_id': null,
-
-              },
-            );
+            await supabase.rpc('registrar_usuario', params: {
+              'p_id_user': userId,
+              'p_email': email,
+              'p_username': resolvedUsername,
+            });
           }
 
           Navigator.pushReplacementNamed(context, '/home');
         }
       } else {
-        // Validar nombre y código de empresa
-        final result = await supabase.rpc(
-          'verificar_codigo_empresa',
-          params: {'nombre_empresa': companyName, 'codigo': companyCode},
-        );
-
-        final empresaId = result?.toString();
-
-        if (empresaId == null ||
-            empresaId.trim().isEmpty ||
-            empresaId == 'null') {
-          showMessage(
-            "Nombre o código de empresa inválido. Contáctenos al +593 99 525 6404",
-          );
-          return;
-        }
-
         final response = await supabase.auth.signUp(
           email: email,
           password: password,
@@ -101,30 +76,22 @@ class _LoginScreenState extends State<LoginScreen> {
 
         final newUser = response.user;
         if (newUser != null) {
-          await supabase.rpc(
-            'registrar_usuario',
-            params: {
-              'p_id_user': newUser.id,
-              'p_email': email,
-              'p_username': username.isNotEmpty
-                  ? username
-                  : email.split('@')[0],
-              'p_empresa_id': empresaId,
-            },
-          );
+          await supabase.rpc('registrar_usuario', params: {
+            'p_id_user': newUser.id,
+            'p_email': email,
+            'p_username': username.isNotEmpty
+                ? username
+                : email.split('@')[0],
+          });
 
-          showMessage(
-            "¡Registro exitoso! Revisa tu correo y confirma tu cuenta antes de iniciar sesión.",
-          );
+          showMessage("¡Registro exitoso! Confirma tu correo antes de iniciar sesión.");
 
-          await Future.delayed(const Duration(seconds: 5));
+          await Future.delayed(const Duration(seconds: 4));
           setState(() {
             isLogin = true;
             emailController.clear();
             passwordController.clear();
             usernameController.clear();
-            companyNameController.clear();
-            companyCodeController.clear();
           });
         } else {
           showMessage("No se pudo crear el usuario.");
@@ -155,9 +122,7 @@ class _LoginScreenState extends State<LoginScreen> {
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             elevation: 6,
             child: Padding(
               padding: const EdgeInsets.all(24),
@@ -200,33 +165,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             validator: (value) =>
                                 (value == null || value.isEmpty)
-                                ? 'Ingrese un nombre de usuario'
-                                : null,
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: companyNameController,
-                            decoration: const InputDecoration(
-                              labelText: 'Nombre de la empresa',
-                              prefixIcon: Icon(Icons.business),
-                            ),
-                            validator: (value) =>
-                                (value == null || value.isEmpty)
-                                ? 'Ingrese el nombre de la empresa'
-                                : null,
-                          ),
-                          const SizedBox(height: 16),
-
-                          TextFormField(
-                            controller: companyCodeController,
-                            decoration: const InputDecoration(
-                              labelText: 'Código de la empresa',
-                              prefixIcon: Icon(Icons.verified_user),
-                            ),
-                            validator: (value) =>
-                                (value == null || value.isEmpty)
-                                ? 'Ingrese el código de la empresa'
-                                : null,
+                                    ? 'Ingrese un nombre de usuario'
+                                    : null,
                           ),
                           const SizedBox(height: 16),
                         ],
@@ -243,9 +183,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ? Icons.visibility
                                 : Icons.visibility_off,
                           ),
-                          onPressed: () => setState(
-                            () => obscurePassword = !obscurePassword,
-                          ),
+                          onPressed: () =>
+                              setState(() => obscurePassword = !obscurePassword),
                         ),
                       ),
                       validator: (value) => (value == null || value.length < 6)

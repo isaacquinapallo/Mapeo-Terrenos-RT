@@ -2,39 +2,30 @@ import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:mapeo_terrenos_rt/pages/home.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 
 class MapaPage extends StatefulWidget {
   final String proyectoId;
   final bool colaborativo;
-  final List<Map<String, dynamic>>? usuarios; // <-- NUEVO
+  final List<Map<String, dynamic>>? usuarios;
 
   const MapaPage({
     super.key,
     required this.proyectoId,
     required this.colaborativo,
-    this.usuarios, // <-- NUEVO
+    this.usuarios,
   });
 
   @override
   State<MapaPage> createState() => _MapaPageState();
 }
 
+
 class _MapaPageState extends State<MapaPage> {
-  late final StreamSubscription<Position> _posStreamSub;
-
-  bool mostrarCoordenadas = false;
-  bool mostrarBarraLateral = true;
-  bool get esMapaGeneralUsuarios => widget.proyectoId == 'usuarios_mapa';
-  bool esUUIDValido(String id) {
-    final uuidRegExp = RegExp(
-      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
-    );
-    return uuidRegExp.hasMatch(id);
-  }
-
   GoogleMapController? mapController;
   List<LatLng> puntos = [];
   final Set<Polygon> _poligonos = {};
@@ -45,6 +36,106 @@ class _MapaPageState extends State<MapaPage> {
   bool finalizado = false;
   String? creadorId;
   String? userIdActual;
+  late final StreamSubscription<Position> _posStreamSub;
+  bool mostrarCoordenadas = false;
+  bool mostrarBarraLateral = true;
+  bool get esMapaGeneralUsuarios => widget.proyectoId == 'usuarios_mapa';
+  bool esUUIDValido(String id) {
+    final uuidRegExp = RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    );
+    return uuidRegExp.hasMatch(id);
+  }
+
+  Future<void> _capturarUbicacion() async {
+    try {
+      bool servicioHabilitado = await Geolocator.isLocationServiceEnabled();
+      if (!servicioHabilitado) {
+        await _mostrarDialogoPermiso(
+          context,
+          'Servicio de ubicación deshabilitado',
+          'Por favor activa el servicio de ubicación para continuar.',
+          abrirConfiguracion: true,
+        );
+        return;
+      }
+
+      LocationPermission permiso = await Geolocator.checkPermission();
+      if (permiso == LocationPermission.denied) {
+        permiso = await Geolocator.requestPermission();
+        if (permiso == LocationPermission.denied) {
+          await _mostrarDialogoPermiso(
+            context,
+            'Permiso de ubicación denegado',
+            'Necesitamos el permiso de ubicación para usar esta función.',
+          );
+          return;
+        }
+      }
+
+      if (permiso == LocationPermission.deniedForever) {
+        await _mostrarDialogoPermiso(
+          context,
+          'Permiso de ubicación denegado permanentemente',
+          'Por favor habilita el permiso manualmente en la configuración.',
+          abrirConfiguracion: true,
+        );
+        return;
+      }
+
+      Position posicion = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+        timeLimit: const Duration(seconds: 5),
+      );
+      final nuevaUbicacion = LatLng(posicion.latitude, posicion.longitude);
+      setState(() {
+        puntos.add(nuevaUbicacion);
+        _dibujarPoligono();
+      });
+
+      await Supabase.instance.client.from('puntos').insert({
+        'creador': userIdActual,
+        'latitud': nuevaUbicacion.latitude,
+        'longitud': nuevaUbicacion.longitude,
+        'timestamp': DateTime.now().toIso8601String(),
+        'proyecto_id': widget.proyectoId,
+      });
+    } catch (e) {
+      print("Error al obtener ubicación: $e");
+    }
+  }
+
+  Future<void> _mostrarDialogoPermiso(
+    BuildContext context,
+    String titulo,
+    String mensaje, {
+    bool abrirConfiguracion = false,
+  }) async {
+    return showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(titulo),
+          content: Text(mensaje),
+          actions: [
+            if (abrirConfiguracion)
+              TextButton(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  await openAppSettings();
+                },
+                child: const Text('Abrir configuración'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   void initState() {
@@ -68,8 +159,7 @@ class _MapaPageState extends State<MapaPage> {
   }
 
   Future<void> _cargarCreador() async {
-    if (widget.proyectoId == 'usuarios_mapa')
-      return; // No aplica para mapa general
+    if (widget.proyectoId == 'usuarios_mapa') return;
 
     try {
       final response = await Supabase.instance.client
@@ -113,7 +203,7 @@ class _MapaPageState extends State<MapaPage> {
         );
       }
     }
-    setState(() {}); // Para refrescar el mapa
+    setState(() {});
   }
 
   void _iniciarActualizacionPoligonoColaborativo() {
@@ -133,9 +223,7 @@ class _MapaPageState extends State<MapaPage> {
       if (!finalizado && mounted) {
         await _cargarPuntosColaborativos();
         _dibujarPoligono();
-        await Future.delayed(
-          const Duration(seconds: 5),
-        ); // Actualizar cada 5 segundos
+        await Future.delayed(const Duration(seconds: 5));
         return true;
       }
       return false;
@@ -165,9 +253,7 @@ class _MapaPageState extends State<MapaPage> {
   }
 
   Future<void> _cargarPuntosColaborativos() async {
-    if (widget.proyectoId == 'usuarios_mapa') {
-      return; // No intentamos cargar puntos si es el mapa general
-    }
+    if (widget.proyectoId == 'usuarios_mapa') return;
 
     try {
       final puntosDB = await Supabase.instance.client
@@ -183,7 +269,6 @@ class _MapaPageState extends State<MapaPage> {
         });
       }
 
-      // Hacer zoom en el último punto cargado
       if (puntos.isNotEmpty && mapController != null) {
         await mapController!.animateCamera(
           CameraUpdate.newLatLngZoom(puntos.last, 18),
@@ -197,11 +282,18 @@ class _MapaPageState extends State<MapaPage> {
   void _dibujarPoligono() {
     _marcadores.clear();
     for (int i = 0; i < puntos.length; i++) {
+      final punto = puntos[i];
+      final lat = punto.latitude.toStringAsFixed(6);
+      final lng = punto.longitude.toStringAsFixed(6);
+
       _marcadores.add(
         Marker(
           markerId: MarkerId('punto_$i'),
-          position: puntos[i],
-          infoWindow: InfoWindow(title: 'Punto ${i + 1}'),
+          position: punto,
+          infoWindow: InfoWindow(
+            title: 'Punto ${i + 1}',
+            snippet: 'Lat: $lat\nLng: $lng',
+          ),
         ),
       );
     }
@@ -225,14 +317,15 @@ class _MapaPageState extends State<MapaPage> {
         puntosPoligono.add(puntosPoligono.first);
       }
 
-      final nuevoPoligono = Polygon(
-        polygonId: const PolygonId('poligono1'),
-        points: puntosPoligono,
-        fillColor: const Color.fromARGB(100, 33, 150, 243),
-        strokeColor: Colors.blue,
-        strokeWidth: 3,
+      _poligonos.add(
+        Polygon(
+          polygonId: const PolygonId('poligono1'),
+          points: puntosPoligono,
+          fillColor: const Color.fromARGB(100, 33, 150, 243),
+          strokeColor: Colors.blue,
+          strokeWidth: 3,
+        ),
       );
-      _poligonos.add(nuevoPoligono);
     }
 
     if (mounted) {
@@ -254,27 +347,24 @@ class _MapaPageState extends State<MapaPage> {
             ubicacionActual = LatLng(pos.latitude, pos.longitude);
           });
 
-          final currentUserId = userIdActual;
-          if (currentUserId != null) {
+          if (userIdActual != null) {
             try {
               final existeUsuario = await Supabase.instance.client
                   .from('users')
                   .select('id_user')
-                  .eq('id_user', currentUserId)
+                  .eq('id_user', userIdActual!)
                   .maybeSingle();
 
               if (existeUsuario != null) {
                 await Supabase.instance.client.from('locations').upsert({
-                  'id_user': currentUserId,
+                  'id_user': userIdActual,
                   'latitude': pos.latitude,
                   'longitude': pos.longitude,
                   'timestamp': DateTime.now().toIso8601String(),
                   'status': true,
                 }, onConflict: 'id_user');
               } else {
-                print(
-                  '❌ Usuario no existe en public.users. No se puede insertar en locations.',
-                );
+                print('❌ Usuario no existe en public.users.');
               }
             } catch (e) {
               print('Error actualizando location: $e');
@@ -289,8 +379,10 @@ class _MapaPageState extends State<MapaPage> {
     if (poly.first != poly.last) {
       poly.add(poly.first);
     }
+
     double total = 0.0;
-    final earthRadius = 6378137.0; // Radio de la Tierra en metros
+    const earthRadius = 6378137.0;
+
     for (int i = 0; i < poly.length - 1; i++) {
       final p1 = poly[i];
       final p2 = poly[i + 1];
@@ -298,41 +390,27 @@ class _MapaPageState extends State<MapaPage> {
           (p2.longitude * pi / 180 - p1.longitude * pi / 180) *
           (2 + sin(p1.latitude * pi / 180) + sin(p2.latitude * pi / 180));
     }
+
     return (total * earthRadius * earthRadius / 2).abs();
   }
 
   LatLng _calcularPuntoMedio() {
-    if (puntos.isEmpty) {
-      print('No hay puntos para calcular el punto medio.');
-      return const LatLng(0, 0);
+    if (puntos.isEmpty) return const LatLng(0, 0);
+
+    double sumaLat = 0;
+    double sumaLng = 0;
+
+    for (final punto in puntos) {
+      sumaLat += punto.latitude;
+      sumaLng += punto.longitude;
     }
 
-    double sumaLatitudes = 0;
-    double sumaLongitudes = 0;
-
-    for (var punto in puntos) {
-      sumaLatitudes += punto.latitude;
-      sumaLongitudes += punto.longitude;
-    }
-
-    final puntoMedio = LatLng(
-      sumaLatitudes / puntos.length,
-      sumaLongitudes / puntos.length,
-    );
-
-    print(
-      'Punto medio: Latitud ${puntoMedio.latitude}, Longitud ${puntoMedio.longitude}',
-    );
-    return puntoMedio;
+    return LatLng(sumaLat / puntos.length, sumaLng / puntos.length);
   }
 
   String _determinarTipoFigura() {
-    final numPuntos =
-        puntos.length - 1; // Excluir el punto repetido al cerrar el polígono
-
-    if (!_esPoligonoRegular()) {
-      return 'Polígono Irregular';
-    }
+    final numPuntos = puntos.length - 1;
+    if (!_esPoligonoRegular()) return 'Polígono Irregular';
 
     switch (numPuntos) {
       case 3:
@@ -357,7 +435,7 @@ class _MapaPageState extends State<MapaPage> {
   }
 
   bool _esPoligonoRegular() {
-    if (puntos.length < 4) return true; // Triángulos siempre son regulares
+    if (puntos.length < 4) return true;
 
     final distancias = <double>[];
 
@@ -367,15 +445,8 @@ class _MapaPageState extends State<MapaPage> {
       distancias.add(sqrt(dx * dx + dy * dy));
     }
 
-    // Verificar si todas las distancias son aproximadamente iguales
-    final primeraDistancia = distancias.first;
-    for (final distancia in distancias) {
-      if ((distancia - primeraDistancia).abs() > 0.01) {
-        return false;
-      }
-    }
-
-    return true;
+    final primera = distancias.first;
+    return distancias.every((d) => (d - primera).abs() <= 0.01);
   }
 
   double _determinarZoomDesdeArea(double area) {
@@ -384,7 +455,7 @@ class _MapaPageState extends State<MapaPage> {
     if (area < 10000) return 17;
     if (area < 50000) return 16;
     if (area < 200000) return 15;
-    return 14; // Más lejos para áreas grandes
+    return 14;
   }
 
   void _mostrarArea() {
@@ -422,22 +493,103 @@ class _MapaPageState extends State<MapaPage> {
       appBar: AppBar(
         title: const Text('Mapa del Territorio'),
         backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.push(context, MaterialPageRoute(
+            builder: (_) => const HomePage(),
+          )),
+        ),
+
       ),
-      body: Row(
+      body: Stack(
         children: [
-          if (mostrarBarraLateral) _buildBarraLateral(),
-          Expanded(
-            flex: mostrarBarraLateral ? 3 : 1,
-            child: Stack(
-              children: [
-                _buildGoogleMap(),
-                if (!mostrarBarraLateral) _buildMostrarCoordenadasButton(),
-                _buildMarcarUbicacionButton(),
-                _buildFinalizarButton(),
+          _buildGoogleMap(),
+          ..._buildCoordenadasWidgets(),
+          _buildMarcarUbicacionButton(),
+          _buildFinalizarButton(),
+          _buildMostrarAreaButton(),
+          _buildBotonBorrarDesdeSupabase(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMostrarAreaButton() {
+    return Positioned(
+      bottom: 20,
+      left: 20,
+      child: FloatingActionButton.extended(
+        heroTag: 'areaBtn',
+        onPressed: _mostrarArea,
+        label: const Text('Mostrar Área'),
+        icon: const Icon(Icons.area_chart),
+        backgroundColor: Colors.blue,
+      ),
+    );
+  }
+
+  Future<void> _borrarPuntosDesdeSupabase() async {
+    try {
+      await Supabase.instance.client
+          .from('puntos')
+          .delete()
+          .eq('proyecto_id', widget.proyectoId);
+
+      setState(() {
+        puntos.clear();
+        _marcadores.clear();
+        _poligonos.clear();
+        _polilineas.clear();
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Puntos eliminados de Supabase')),
+      );
+    } catch (e) {
+      print('Error al borrar puntos: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Error al borrar puntos')));
+    }
+  }
+
+  Widget _buildBotonBorrarDesdeSupabase() {
+    // Solo el creador puede ver este botón
+    if (userIdActual != creadorId) return const SizedBox.shrink();
+
+    return Positioned(
+      bottom: 160, 
+      left: 20,
+      child: FloatingActionButton.extended(
+        heroTag: 'borrarSupabaseBtn',
+        onPressed: () async {
+          final confirmar = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('¿Borrar puntos del proyecto?'),
+              content: const Text(
+                'Esto eliminará todos los puntos guardados en Supabase para este proyecto.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Borrar'),
+                ),
               ],
             ),
-          ),
-        ],
+          );
+
+          if (confirmar == true) {
+            await _borrarPuntosDesdeSupabase();
+          }
+        },
+        icon: const Icon(Icons.delete),
+        label: const Text('Borrar'),
+        backgroundColor: Colors.red,
       ),
     );
   }
@@ -448,13 +600,13 @@ class _MapaPageState extends State<MapaPage> {
         GoogleMap(
           onMapCreated: (controller) {
             mapController = controller;
+            setState(() {});
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
                 _cargarPuntosColaborativos().then((_) => _dibujarPoligono());
               }
             });
           },
-
           initialCameraPosition: CameraPosition(
             target: ubicacionActual ?? const LatLng(-0.22985, -78.52495),
             zoom: 16,
@@ -528,105 +680,21 @@ class _MapaPageState extends State<MapaPage> {
               }
             : null,
         icon: const Icon(Icons.check_circle),
-        label: const Text('Finalizar Escaneo'),
-      ),
-    );
-  }
-
-  Widget _buildBarraLateral() {
-    return Expanded(
-      flex: 1,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.grey[100],
-          border: const Border(right: BorderSide(color: Colors.grey)),
-        ),
-        child: Column(
-          children: [
-            _buildBarraLateralHeader(),
-            const Divider(),
-            Expanded(
-              child: puntos.isEmpty
-                  ? const Center(child: Text('No hay puntos todavía'))
-                  : ListView.builder(
-                      itemCount: puntos.length,
-                      itemBuilder: (context, index) {
-                        final p = puntos[index];
-                        return Card(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          child: ListTile(
-                            dense: true,
-                            leading: const Icon(Icons.place),
-                            title: Text(
-                              'Lat: ${p.latitude.toStringAsFixed(6)}',
-                            ),
-                            subtitle: Text(
-                              'Lng: ${p.longitude.toStringAsFixed(6)}',
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: ElevatedButton.icon(
-                onPressed: _mostrarArea,
-                icon: const Icon(Icons.area_chart),
-                label: const Text('Mostrar Área'),
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(45),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBarraLateralHeader() {
-    return ListTile(
-      title: const Text(
-        'Coordenadas',
-        style: TextStyle(fontWeight: FontWeight.bold),
-      ),
-      trailing: IconButton(
-        onPressed: () {
-          setState(() => mostrarBarraLateral = false);
-        },
-        icon: const Icon(Icons.close_fullscreen),
-        tooltip: 'Ocultar coordenadas',
-      ),
-    );
-  }
-
-  Widget _buildMostrarCoordenadasButton() {
-    return Positioned(
-      top: 20,
-      left: 20,
-      child: FloatingActionButton(
-        heroTag: 'coordenadasBtn',
-        mini: true,
-        onPressed: () => setState(() => mostrarBarraLateral = true),
-        tooltip: 'Mostrar coordenadas del polígono',
-        child: const Icon(Icons.menu_open),
+        label: const Text('Terminar'),
       ),
     );
   }
 
   void _mostrarModalFinalizar(BuildContext context) {
     bool cargandoImagen = false;
+
     showDialog(
       context: context,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
             return AlertDialog(
-              title: const Text('Finalizar Escaneo'),
+              title: const Text('Finalizar Mapeo'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -643,6 +711,7 @@ class _MapaPageState extends State<MapaPage> {
                             child: Text(
                               'Se generará una captura del mapa con las líneas y el área completa.',
                               style: TextStyle(color: Colors.grey),
+                              textAlign: TextAlign.center,
                             ),
                           ),
                   ),
@@ -651,51 +720,34 @@ class _MapaPageState extends State<MapaPage> {
               actions: [
                 ElevatedButton(
                   onPressed: () async {
-                    setStateDialog(() {
-                      cargandoImagen = true; // Activa el estado de carga
-                    });
+                    setStateDialog(() => cargandoImagen = true);
 
                     try {
-                      setState(() {
-                        finalizado = true;
-                      });
-
-                      // Dibujar el polígono con zIndex para que se muestre por encima
+                      setState(() => finalizado = true);
                       _dibujarPoligonoConZIndex();
 
-                      // Guardar los marcadores originales
                       final Set<Marker> marcadoresOriginales = Set.from(
                         _marcadores,
                       );
+                      setState(() => _marcadores.clear());
 
-                      // Ocultar los marcadores y deshabilitar la ubicación del usuario
-                      setState(() {
-                        _marcadores.clear();
-                      });
-
-                      // Calcular el área y el punto medio
                       final area = _calcularArea();
                       final puntoMedio = _calcularCentro(puntos);
                       final zoom = _determinarZoomDesdeArea(area);
 
-                      // Ajustar la cámara al punto medio y al zoom calculado
                       await mapController?.animateCamera(
                         CameraUpdate.newLatLngZoom(puntoMedio, zoom),
                       );
 
-                      // Capturar el mapa
                       final Uint8List? captura = await mapController
                           ?.takeSnapshot();
 
-                      // Restaurar los marcadores y la ubicación del usuario
-                      setState(() {
-                        _marcadores.addAll(marcadoresOriginales);
-                      });
+                      setState(() => _marcadores.addAll(marcadoresOriginales));
 
                       if (captura != null) {
-                        // Subir la captura al almacenamiento de Supabase
                         final fileName =
                             'captura_mapa_${widget.proyectoId}_${DateTime.now().millisecondsSinceEpoch}.png';
+
                         await Supabase.instance.client.storage
                             .from('uploads')
                             .uploadBinary(fileName, captura);
@@ -704,7 +756,6 @@ class _MapaPageState extends State<MapaPage> {
                             .from('uploads')
                             .getPublicUrl(fileName);
 
-                        // Actualizar el territorio con la URL de la imagen
                         await Supabase.instance.client
                             .from('territories')
                             .update({
@@ -735,9 +786,7 @@ class _MapaPageState extends State<MapaPage> {
                         );
                       }
                     } finally {
-                      setStateDialog(() {
-                        cargandoImagen = false; // Desactiva el estado de carga
-                      });
+                      setStateDialog(() => cargandoImagen = false);
                     }
                   },
                   child: const Text('Capturar y Subir'),
@@ -756,7 +805,6 @@ class _MapaPageState extends State<MapaPage> {
     );
   }
 
-  // Función para dibujar el polígono con zIndex
   void _dibujarPoligonoConZIndex() {
     _poligonos.clear();
     if (puntos.length > 2) {
@@ -765,15 +813,16 @@ class _MapaPageState extends State<MapaPage> {
         puntosPoligono.add(puntosPoligono.first);
       }
 
-      final nuevoPoligono = Polygon(
-        polygonId: const PolygonId('poligono1'),
-        points: puntosPoligono,
-        fillColor: const Color.fromARGB(100, 33, 150, 243),
-        strokeColor: Colors.blue,
-        strokeWidth: 3,
-        zIndex: 1,
+      _poligonos.add(
+        Polygon(
+          polygonId: const PolygonId('poligono1'),
+          points: puntosPoligono,
+          fillColor: const Color.fromARGB(100, 33, 150, 243),
+          strokeColor: Colors.blue,
+          strokeWidth: 3,
+          zIndex: 1,
+        ),
       );
-      _poligonos.add(nuevoPoligono);
     }
 
     _polilineas.clear();
@@ -788,8 +837,9 @@ class _MapaPageState extends State<MapaPage> {
         ),
       );
     }
+
     if (mounted) {
-      setState(() {}); // Redibuja el mapa
+      setState(() {});
     }
   }
 
@@ -801,21 +851,17 @@ class _MapaPageState extends State<MapaPage> {
     }
 
     try {
-      // Obtén la ubicación actual en tiempo real
       final Position pos = await Geolocator.getCurrentPosition();
-
-      // Actualiza la ubicación actual
       final nuevaUbicacion = LatLng(pos.latitude, pos.longitude);
 
-      // Agrega el nuevo punto a la lista de puntos inmediatamente
       setState(() {
         puntos.add(nuevaUbicacion);
-        _dibujarPoligono(); // Redibuja el polígono con el nuevo punto
+        _dibujarPoligono();
       });
 
       // Inserta la ubicación actual en la base de datos en segundo plano
       await Supabase.instance.client.from('puntos').insert({
-        'usuario': userIdActual,
+        'creador': userIdActual,
         'latitud': nuevaUbicacion.latitude,
         'longitud': nuevaUbicacion.longitude,
         'timestamp': DateTime.now().toIso8601String(),
@@ -829,5 +875,37 @@ class _MapaPageState extends State<MapaPage> {
         );
       }
     }
+  }
+
+  List<Widget> _buildCoordenadasWidgets() {
+    if (mapController == null || puntos.isEmpty) return [];
+
+    return puntos.asMap().entries.map((entry) {
+      final index = entry.key;
+      final punto = entry.value;
+
+      return FutureBuilder<ScreenCoordinate>(
+        future: mapController!.getScreenCoordinate(punto),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) return Container();
+          final coord = snapshot.data!;
+          return Positioned(
+            top: coord.y.toDouble() - 40,
+            left: coord.x.toDouble() - 60, // Ajuste para centrar el texto
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                '(${punto.latitude.toStringAsFixed(5)}, ${punto.longitude.toStringAsFixed(5)})',
+                style: const TextStyle(color: Colors.white, fontSize: 11),
+              ),
+            ),
+          );
+        },
+      );
+    }).toList();
   }
 }

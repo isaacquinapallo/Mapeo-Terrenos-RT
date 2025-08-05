@@ -10,18 +10,13 @@ import 'pages/mapa.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  if (kIsWeb) {
-  await Supabase.initialize(
-    url: 'https://vsarwwlboedncyyzgpcz.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZzYXJ3d2xib2VkbmN5eXpncGN6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQwOTg2MjUsImV4cCI6MjA2OTY3NDYyNX0.KypF7mPm2BMkoYXnYPZFKpER_WrJrq7GHvgcTqWUyf4',
-  );
-} else {
+  
   await dotenv.load(fileName: 'assets/.env');
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL']!,
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
   );
-}
+
 
 
   runApp(const MyApp());
