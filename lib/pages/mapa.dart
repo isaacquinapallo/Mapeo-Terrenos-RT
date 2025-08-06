@@ -6,6 +6,7 @@ import 'package:mapeo_terrenos_rt/pages/home.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:location/location.dart' hide LocationAccuracy;
 import 'dart:async';
 
 class MapaPage extends StatefulWidget {
@@ -23,7 +24,6 @@ class MapaPage extends StatefulWidget {
   @override
   State<MapaPage> createState() => _MapaPageState();
 }
-
 
 class _MapaPageState extends State<MapaPage> {
   GoogleMapController? mapController;
@@ -103,6 +103,14 @@ class _MapaPageState extends State<MapaPage> {
     } catch (e) {
       print("Error al obtener ubicación: $e");
     }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('📍 Ubicación marcada exitosamente.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   Future<void> _mostrarDialogoPermiso(
@@ -136,6 +144,24 @@ class _MapaPageState extends State<MapaPage> {
       },
     );
   }
+
+  Future<void> verificarYActivarGPS() async {
+  Location location = Location();
+
+  bool servicioActivo = await location.serviceEnabled();
+  if (!servicioActivo) {
+    servicioActivo = await location.requestService();
+  }
+
+  if (!servicioActivo) {
+    // El usuario no quiso activar el GPS
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor activa el GPS para continuar')),
+      );
+    }
+  }
+}
 
   @override
   void initState() {
@@ -495,11 +521,11 @@ class _MapaPageState extends State<MapaPage> {
         backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.push(context, MaterialPageRoute(
-            builder: (_) => const HomePage(),
-          )),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const HomePage()),
+          ),
         ),
-
       ),
       body: Stack(
         children: [
@@ -630,7 +656,7 @@ class _MapaPageState extends State<MapaPage> {
         heroTag: 'marcarBtn',
         onPressed: cargandoUbicacion || finalizado || esMapaGeneralUsuarios
             ? null
-            : _marcarUbicacionActual,
+            : _capturarUbicacion,
         label: const Text('Marcar'),
         icon: const Icon(Icons.add_location_alt),
         backgroundColor: Colors.green,
@@ -746,14 +772,14 @@ class _MapaPageState extends State<MapaPage> {
 
                       if (captura != null) {
                         final fileName =
-                            'captura_mapa_${widget.proyectoId}_${DateTime.now().millisecondsSinceEpoch}.png';
+                            'mapa_id_${widget.proyectoId}_${DateTime.now().millisecondsSinceEpoch}.png';
 
                         await Supabase.instance.client.storage
-                            .from('uploads')
+                            .from('bucket-mapas')
                             .uploadBinary(fileName, captura);
 
                         final imageUrl = Supabase.instance.client.storage
-                            .from('uploads')
+                            .from('bucket-mapas')
                             .getPublicUrl(fileName);
 
                         await Supabase.instance.client
@@ -843,45 +869,11 @@ class _MapaPageState extends State<MapaPage> {
     }
   }
 
-  Future<void> _marcarUbicacionActual() async {
-    if (finalizado || !esUUIDValido(widget.proyectoId)) return;
-    if (userIdActual == null) {
-      print('Usuario no autenticado');
-      return;
-    }
-
-    try {
-      final Position pos = await Geolocator.getCurrentPosition();
-      final nuevaUbicacion = LatLng(pos.latitude, pos.longitude);
-
-      setState(() {
-        puntos.add(nuevaUbicacion);
-        _dibujarPoligono();
-      });
-
-      // Inserta la ubicación actual en la base de datos en segundo plano
-      await Supabase.instance.client.from('puntos').insert({
-        'creador': userIdActual,
-        'latitud': nuevaUbicacion.latitude,
-        'longitud': nuevaUbicacion.longitude,
-        'timestamp': DateTime.now().toIso8601String(),
-        'proyecto_id': widget.proyectoId,
-      });
-    } catch (e) {
-      print('Error al insertar punto: $e');
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error al marcar la ubicación')),
-        );
-      }
-    }
-  }
 
   List<Widget> _buildCoordenadasWidgets() {
     if (mapController == null || puntos.isEmpty) return [];
 
     return puntos.asMap().entries.map((entry) {
-      final index = entry.key;
       final punto = entry.value;
 
       return FutureBuilder<ScreenCoordinate>(

@@ -147,7 +147,6 @@ class _CrearProyectoPageState extends State<CrearProyectoPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Iniciar nuevo proyecto'), centerTitle: true),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Form(

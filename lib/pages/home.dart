@@ -1,9 +1,9 @@
-// Página principal de la aplicación
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'proyectos.dart';
+import 'administrador.dart';
 import 'mapa.dart';
 
 class HomePage extends StatefulWidget {
@@ -17,14 +17,41 @@ class _HomePageState extends State<HomePage> {
   int _paginaActual = 0;
   String? userIdActual;
   String? userEmailActual;
+  String? rolUsuario;
+
+  late Future<List<dynamic>> invitacionesFuture;
 
   @override
   void initState() {
     super.initState();
     userIdActual = Supabase.instance.client.auth.currentUser?.id;
     userEmailActual = Supabase.instance.client.auth.currentUser?.email;
+    _obtenerRolUsuario();
     _registrarUsuarioSiNoExiste();
+
+    if (userIdActual != null) {
+      invitacionesFuture = _obtenerInvitaciones(userIdActual!);
+    } else {
+      invitacionesFuture = Future.value([]);
+    }
+
     setState(() {});
+  }
+
+  Future<void> _obtenerRolUsuario() async {
+    if (userIdActual == null) return;
+
+    final userData = await Supabase.instance.client
+        .from('users')
+        .select('tipo')
+        .eq('id_user', userIdActual!)
+        .maybeSingle();
+
+    setState(() {
+      rolUsuario = userData?['tipo'];
+      print('Rol del usuario: $rolUsuario');
+      print('ID actual: $userIdActual');
+    });
   }
 
   Future<void> _registrarUsuarioSiNoExiste() async {
@@ -48,7 +75,6 @@ class _HomePageState extends State<HomePage> {
             'p_id_user': uid,
             'p_email': email,
             'p_username': username,
-            'p_empresa_id': null,
           },
         );
 
@@ -62,7 +88,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<List<dynamic>> _obtenerMisProyectos(String userIdActual) async {
-    if (userIdActual == null) return <dynamic>[];
     return await Supabase.instance.client
         .from('territories')
         .select()
@@ -70,13 +95,11 @@ class _HomePageState extends State<HomePage> {
         .order('created_at', ascending: false);
   }
 
-  Future<List<dynamic>> _obtenerInvitaciones(String? userIdActual) async {
-    if (userIdActual == null) return <dynamic>[];
-
+  Future<List<dynamic>> _obtenerInvitaciones(String userIdActual) async {
     final response = await Supabase.instance.client
         .from('territories')
         .select()
-        .filter('participantes', 'cs', '["$userIdActual"]')
+        .filter('participantes', 'cs', '{${userIdActual}}')
         .neq('creador', userIdActual)
         .neq('finalizado', true)
         .order('created_at', ascending: false);
@@ -91,11 +114,18 @@ class _HomePageState extends State<HomePage> {
     }
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mapeo de Terrenos RT'),
+        title: const Text('Mapeo de Terrenos'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () => setState(() {}),
+            onPressed: () {
+              setState(() {
+                // Refrescar invitaciones y proyectos al pulsar refresh
+                if (userIdActual != null) {
+                  invitacionesFuture = _obtenerInvitaciones(userIdActual!);
+                }
+              });
+            },
           ),
           IconButton(
             icon: const Icon(Icons.logout),
@@ -134,24 +164,29 @@ class _HomePageState extends State<HomePage> {
         index: _paginaActual,
         children: [
           _buildMisProyectos(userIdActual!),
-          _buildInvitaciones(userIdActual!),
+          _buildInvitaciones(),
           const CrearProyectoPage(),
+          if (rolUsuario == 'administrador') const AdministrarUsuariosPage(),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _paginaActual,
         onTap: (index) => setState(() => _paginaActual = index),
-        items: const [
-          BottomNavigationBarItem(
+        items: [
+          const BottomNavigationBarItem(
             icon: Icon(Icons.folder),
             label: 'Mis Proyectos',
           ),
-          BottomNavigationBarItem(
+          const BottomNavigationBarItem(
             icon: Icon(Icons.mail),
             label: 'Invitaciones',
           ),
-
-          BottomNavigationBarItem(icon: Icon(Icons.add), label: 'Nuevo'),
+          const BottomNavigationBarItem(icon: Icon(Icons.add), label: 'Nuevo'),
+          if (rolUsuario == 'administrador')
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.supervisor_account),
+              label: 'Usuarios',
+            ),
         ],
         type: BottomNavigationBarType.fixed,
       ),
@@ -316,17 +351,20 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildInvitaciones(String userIdActual) {
+  Widget _buildInvitaciones() {
     return FutureBuilder<List<dynamic>>(
-      future: _obtenerInvitaciones(userIdActual),
+      future: invitacionesFuture,
       builder: (context, snapshot) {
-        if (!snapshot.hasData) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
-        }
-        final territorios = snapshot.data!;
-        if (territorios.isEmpty) {
+        } else if (snapshot.hasError) {
+          return Center(
+              child: Text('Error al cargar invitaciones: ${snapshot.error}'));
+        } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return const Center(child: Text('No tienes invitaciones aún'));
         }
+
+        final territorios = snapshot.data!;
 
         return ListView.builder(
           itemCount: territorios.length,
@@ -339,7 +377,7 @@ class _HomePageState extends State<HomePage> {
                 subtitle: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Descripción: ${territorio['propieties'] ?? ''}'),
+                    Text('Descripción: ${territorio['properties'] ?? ''}'),
                     Text(
                       'Colaborativo: ${territorio['colaborativo'] == true ? 'Sí' : 'No'}',
                     ),
