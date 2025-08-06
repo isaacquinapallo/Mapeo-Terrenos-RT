@@ -4,10 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:mapeo_terrenos_rt/pages/home.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:location/location.dart' hide LocationAccuracy;
 import 'dart:async';
+import 'package:geolocator/geolocator.dart' as geo_location_accuracy;
+import 'package:location/location.dart' hide LocationAccuracy;
+import 'package:background_locator_2/background_locator.dart';
+import 'package:background_locator_2/settings/android_settings.dart'as locator_android;
+import 'package:background_locator_2/settings/ios_settings.dart' as locator_ios;
+import 'package:background_locator_2/settings/locator_settings.dart' show LocationAccuracy;
+import 'package:background_locator_2/settings/android_settings.dart';
+import '../services/location_callback_handler.dart';
 
 class MapaPage extends StatefulWidget {
   final String proyectoId;
@@ -36,7 +42,7 @@ class _MapaPageState extends State<MapaPage> {
   bool finalizado = false;
   String? creadorId;
   String? userIdActual;
-  late final StreamSubscription<Position> _posStreamSub;
+  late final StreamSubscription<geo_location_accuracy.Position> _posStreamSub;
   bool mostrarCoordenadas = false;
   bool mostrarBarraLateral = true;
   bool get esMapaGeneralUsuarios => widget.proyectoId == 'usuarios_mapa';
@@ -47,9 +53,39 @@ class _MapaPageState extends State<MapaPage> {
     return uuidRegExp.hasMatch(id);
   }
 
+  Future<void> iniciarUbicacionSegundoPlano() async {
+    await BackgroundLocator.initialize();
+
+    await BackgroundLocator.registerLocationUpdate(
+      callback,
+      initCallback: notificationCallback,
+      initDataCallback: {'mensaje': 'Rastreo iniciado'},
+      disposeCallback: () {
+        print('🔕 Rastreo detenido.');
+      },
+      iosSettings: locator_ios.IOSSettings(
+        accuracy: LocationAccuracy.NAVIGATION,
+        distanceFilter: 5,
+      ),
+      androidSettings: locator_android.AndroidSettings(
+        accuracy: LocationAccuracy.NAVIGATION,
+        interval: 10,
+        distanceFilter: 5,
+        androidNotificationSettings: AndroidNotificationSettings(
+          notificationChannelName: 'Ubicación en segundo plano',
+          notificationTitle: 'App de Mapeo Activa',
+          notificationMsg: 'Rastreo en segundo plano activo',
+          notificationIcon: '',
+          notificationIconColor: Colors.green,
+        ),
+      ),
+    );
+  }
+
   Future<void> _capturarUbicacion() async {
     try {
-      bool servicioHabilitado = await Geolocator.isLocationServiceEnabled();
+      bool servicioHabilitado =
+          await geo_location_accuracy.Geolocator.isLocationServiceEnabled();
       if (!servicioHabilitado) {
         await _mostrarDialogoPermiso(
           context,
@@ -60,10 +96,11 @@ class _MapaPageState extends State<MapaPage> {
         return;
       }
 
-      LocationPermission permiso = await Geolocator.checkPermission();
-      if (permiso == LocationPermission.denied) {
-        permiso = await Geolocator.requestPermission();
-        if (permiso == LocationPermission.denied) {
+      geo_location_accuracy.LocationPermission permiso =
+          await geo_location_accuracy.Geolocator.checkPermission();
+      if (permiso == geo_location_accuracy.LocationPermission.denied) {
+        permiso = await geo_location_accuracy.Geolocator.requestPermission();
+        if (permiso == geo_location_accuracy.LocationPermission.denied) {
           await _mostrarDialogoPermiso(
             context,
             'Permiso de ubicación denegado',
@@ -73,7 +110,7 @@ class _MapaPageState extends State<MapaPage> {
         }
       }
 
-      if (permiso == LocationPermission.deniedForever) {
+      if (permiso == geo_location_accuracy.LocationPermission.deniedForever) {
         await _mostrarDialogoPermiso(
           context,
           'Permiso de ubicación denegado permanentemente',
@@ -83,10 +120,12 @@ class _MapaPageState extends State<MapaPage> {
         return;
       }
 
-      Position posicion = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-        timeLimit: const Duration(seconds: 5),
-      );
+      geo_location_accuracy.Position posicion =
+          await geo_location_accuracy.Geolocator.getCurrentPosition(
+            desiredAccuracy: geo_location_accuracy.LocationAccuracy.medium,
+            timeLimit: const Duration(seconds: 5),
+          );
+
       final nuevaUbicacion = LatLng(posicion.latitude, posicion.longitude);
       setState(() {
         puntos.add(nuevaUbicacion);
@@ -103,6 +142,7 @@ class _MapaPageState extends State<MapaPage> {
     } catch (e) {
       print("Error al obtener ubicación: $e");
     }
+
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -146,22 +186,24 @@ class _MapaPageState extends State<MapaPage> {
   }
 
   Future<void> verificarYActivarGPS() async {
-  Location location = Location();
+    Location location = Location();
 
-  bool servicioActivo = await location.serviceEnabled();
-  if (!servicioActivo) {
-    servicioActivo = await location.requestService();
-  }
+    bool servicioActivo = await location.serviceEnabled();
+    if (!servicioActivo) {
+      servicioActivo = await location.requestService();
+    }
 
-  if (!servicioActivo) {
-    // El usuario no quiso activar el GPS
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Por favor activa el GPS para continuar')),
-      );
+    if (!servicioActivo) {
+      // El usuario no quiso activar el GPS
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Por favor activa el GPS para continuar'),
+          ),
+        );
+      }
     }
   }
-}
 
   @override
   void initState() {
@@ -182,6 +224,7 @@ class _MapaPageState extends State<MapaPage> {
     }
 
     _cargarCreador();
+    iniciarUbicacionSegundoPlano();
   }
 
   Future<void> _cargarCreador() async {
@@ -257,16 +300,17 @@ class _MapaPageState extends State<MapaPage> {
   }
 
   Future<void> _verificarPermisoGPS() async {
-    final permiso = await Geolocator.checkPermission();
-    if (permiso == LocationPermission.denied) {
-      await Geolocator.requestPermission();
+    final permiso = await geo_location_accuracy.Geolocator.checkPermission();
+    if (permiso == geo_location_accuracy.LocationPermission.denied) {
+      await geo_location_accuracy.Geolocator.requestPermission();
     }
   }
 
   Future<void> _obtenerUbicacion() async {
     setState(() => cargandoUbicacion = true);
     try {
-      Position pos = await Geolocator.getCurrentPosition();
+      geo_location_accuracy.Position pos =
+          await geo_location_accuracy.Geolocator.getCurrentPosition();
       if (mounted) {
         setState(() {
           ubicacionActual = LatLng(pos.latitude, pos.longitude);
@@ -361,12 +405,12 @@ class _MapaPageState extends State<MapaPage> {
 
   void _iniciarTrackingUbicacion() {
     _posStreamSub =
-        Geolocator.getPositionStream(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
+        geo_location_accuracy.Geolocator.getPositionStream(
+          locationSettings: const geo_location_accuracy.LocationSettings(
+            accuracy: geo_location_accuracy.LocationAccuracy.high,
             distanceFilter: 5,
           ),
-        ).listen((Position pos) async {
+        ).listen((geo_location_accuracy.Position pos) async {
           if (!mounted) return;
 
           setState(() {
@@ -396,7 +440,8 @@ class _MapaPageState extends State<MapaPage> {
               print('Error actualizando location: $e');
             }
           }
-        });
+        }
+    );
   }
 
   double _calcularArea() {
@@ -584,7 +629,7 @@ class _MapaPageState extends State<MapaPage> {
     if (userIdActual != creadorId) return const SizedBox.shrink();
 
     return Positioned(
-      bottom: 160, 
+      bottom: 160,
       left: 20,
       child: FloatingActionButton.extended(
         heroTag: 'borrarSupabaseBtn',
@@ -868,7 +913,6 @@ class _MapaPageState extends State<MapaPage> {
       setState(() {});
     }
   }
-
 
   List<Widget> _buildCoordenadasWidgets() {
     if (mapController == null || puntos.isEmpty) return [];
