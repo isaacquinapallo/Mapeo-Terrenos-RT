@@ -41,6 +41,8 @@ class _MapaPageState extends State<MapaPage> {
   LatLng? ubicacionActual;
   bool cargandoUbicacion = false;
   bool finalizado = false;
+  bool _rastreoActivo = false;
+  Timer? _timerRastreo;
   String? creadorId;
   String? userIdActual;
   late final StreamSubscription<geo_location_accuracy.Position> _posStreamSub;
@@ -251,6 +253,7 @@ class _MapaPageState extends State<MapaPage> {
 
   @override
   void dispose() {
+    _timerRastreo?.cancel();
     _posStreamSub.cancel();
     mapController?.dispose();
     super.dispose();
@@ -443,6 +446,25 @@ class _MapaPageState extends State<MapaPage> {
             }
           }
         });
+  }
+
+  void _alternarRastreoSegundoPlano() async {
+    if (_rastreoActivo) {
+      _timerRastreo?.cancel();
+      setState(() => _rastreoActivo = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('📴 Rastreo detenido')));
+    } else {
+      await _capturarUbicacion(); // registra la primera
+      _timerRastreo = Timer.periodic(const Duration(minutes: 1), (_) {
+        _capturarUbicacion(); // registra cada minuto
+      });
+      setState(() => _rastreoActivo = true);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('📡 Rastreo activado')));
+    }
   }
 
   double _calcularArea() {
@@ -698,15 +720,48 @@ class _MapaPageState extends State<MapaPage> {
     return Positioned(
       bottom: 90,
       left: 20,
-      child: FloatingActionButton.extended(
-        heroTag: 'marcarBtn',
-        onPressed: cargandoUbicacion || finalizado || esMapaGeneralUsuarios
-            ? null
-            : _capturarUbicacion,
-        label: const Text('Marcar'),
-        icon: const Icon(Icons.add_location_alt),
-        backgroundColor: Colors.green,
-        elevation: 6,
+      child: GestureDetector(
+        onLongPress: () {
+          showModalBottomSheet(
+            context: context,
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            builder: (context) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: Icon(
+                      _rastreoActivo ? Icons.pause : Icons.play_arrow,
+                    ),
+                    title: Text(
+                      _rastreoActivo
+                          ? 'Detener rastreo en segundo plano'
+                          : 'Activar rastreo en segundo plano',
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _alternarRastreoSegundoPlano();
+                    },
+                  ),
+                ],
+              );
+            },
+          );
+        },
+        child: FloatingActionButton.extended(
+          heroTag: 'marcarBtn',
+          onPressed: cargandoUbicacion || finalizado || esMapaGeneralUsuarios
+              ? null
+              : _capturarUbicacion,
+          label: Text(_rastreoActivo ? 'Rastreando...' : 'Marcar'),
+          icon: Icon(
+            _rastreoActivo ? Icons.location_searching : Icons.add_location_alt,
+          ),
+          backgroundColor: _rastreoActivo ? Colors.orange : Colors.green,
+          elevation: 6,
+        ),
       ),
     );
   }
@@ -758,19 +813,19 @@ class _MapaPageState extends State<MapaPage> {
                   }
                 }
               : null,
-          icon: const Icon(Icons.check_circle_outline),
-          label: const Text('Terminar'),
+          icon: const Icon(Icons.flag_circle_outlined, size: 20),
+          label: const Text('Finalizar', overflow: TextOverflow.ellipsis),
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.green,
             foregroundColor: Colors.white,
             elevation: 6,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
             ),
             textStyle: const TextStyle(
               fontSize: 16,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ),
@@ -789,34 +844,41 @@ class _MapaPageState extends State<MapaPage> {
           builder: (context, setStateDialog) {
             return Dialog(
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(20),
               ),
+              backgroundColor: Colors.black.withOpacity(0.9),
               child: Padding(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     cargandoImagen
-                        ? const CircularProgressIndicator()
+                        ? const CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          )
                         : const Icon(
-                            Icons.check_circle_outline,
+                            Icons.check_circle,
                             size: 60,
-                            color: Colors.green,
+                            color: Colors.greenAccent,
                           ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
                     const Text(
-                      'Proyecto Finalizado',
+                      '¡Territorio Guardado!',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
+                        color: Colors.white,
                       ),
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Se generará una captura del mapa con las líneas y el área completa.',
+                      'Se tomará una captura del mapa\ncon el área y los puntos trazados.',
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 24),
                     Row(
                       children: [
                         Expanded(
@@ -904,16 +966,35 @@ class _MapaPageState extends State<MapaPage> {
                             icon: const Icon(Icons.upload_rounded),
                             label: const Text('Capturar y Subir'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green,
+                              backgroundColor: Colors.greenAccent,
+                              foregroundColor: Colors.black,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              textStyle: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: OutlinedButton.icon(
                             onPressed: () => Navigator.of(context).pop(),
                             icon: const Icon(Icons.arrow_back),
-                            label: const Text('Regresar'),
+                            label: const Text('Volver'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: const BorderSide(color: Colors.white38),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              textStyle: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
                           ),
                         ),
                       ],
