@@ -30,7 +30,7 @@ class MyApp extends StatelessWidget {
     final user = Supabase.instance.client.auth.currentUser;
 
     return MaterialApp(
-      title: 'Mapeo de Terrenos',
+      title: 'Mapeo de Terrenos RT',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.light,

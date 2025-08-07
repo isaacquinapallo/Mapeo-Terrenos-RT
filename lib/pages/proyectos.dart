@@ -17,11 +17,11 @@ class _CrearProyectoPageState extends State<CrearProyectoPage> {
   final TextEditingController descripcionCtrl = TextEditingController();
   bool colaborativo = false;
   bool esUUIDValido(String id) {
-  final uuidRegExp = RegExp(
-    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
-  );
-  return uuidRegExp.hasMatch(id);
-}
+    final uuidRegExp = RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    );
+    return uuidRegExp.hasMatch(id);
+  }
 
   List<dynamic> usuariosActivos = [];
   List<dynamic> seleccionados = [];
@@ -154,12 +154,12 @@ class _CrearProyectoPageState extends State<CrearProyectoPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Información del Territorio',
                 style: TextStyle(
-                  fontSize: 20,
+                  fontSize: 22,
                   fontWeight: FontWeight.bold,
-                  color: Colors.blue,
+                  color: Colors.teal.shade700,
                 ),
               ),
               const SizedBox(height: 20),
@@ -168,9 +168,16 @@ class _CrearProyectoPageState extends State<CrearProyectoPage> {
                 decoration: InputDecoration(
                   labelText: 'Nombre del Territorio',
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8.0),
+                    borderRadius: BorderRadius.circular(12.0),
                   ),
-                  prefixIcon: const Icon(Icons.map),
+                  prefixIcon: const Icon(Icons.map_outlined),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(
+                      color: Colors.teal.shade700,
+                      width: 2,
+                    ),
+                    borderRadius: BorderRadius.circular(12.0),
+                  ),
                 ),
                 validator: (value) =>
                     value!.isEmpty ? 'El nombre es requerido' : null,
@@ -181,9 +188,16 @@ class _CrearProyectoPageState extends State<CrearProyectoPage> {
                 decoration: InputDecoration(
                   labelText: 'Descripción',
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8.0),
+                    borderRadius: BorderRadius.circular(12.0),
                   ),
-                  prefixIcon: const Icon(Icons.description),
+                  prefixIcon: const Icon(Icons.description_outlined),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(
+                      color: Colors.teal.shade700,
+                      width: 2,
+                    ),
+                    borderRadius: BorderRadius.circular(12.0),
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
@@ -193,6 +207,7 @@ class _CrearProyectoPageState extends State<CrearProyectoPage> {
                   style: TextStyle(fontSize: 16),
                 ),
                 value: colaborativo,
+                activeColor: Colors.teal.shade600,
                 onChanged: (val) async {
                   if (!val) {
                     setState(() {
@@ -210,9 +225,13 @@ class _CrearProyectoPageState extends State<CrearProyectoPage> {
               ),
               if (colaborativo) ...[
                 const SizedBox(height: 10),
-                const Text(
+                Text(
                   'Selecciona usuarios activos:',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.teal.shade800,
+                  ),
                 ),
                 const SizedBox(height: 10),
                 if (usuariosActivos.isEmpty)
@@ -222,46 +241,47 @@ class _CrearProyectoPageState extends State<CrearProyectoPage> {
                   )
                 else
                   Column(
-                    children: usuariosActivos
-                        .map(
-                          (u) => CheckboxListTile(
-                            title: Text(
-                              (u['users'] != null &&
-                                      u['users']['username'] != null)
-                                  ? u['users']['username']
-                                  : u['id_user'].toString(),
-                            ),
-                            value: seleccionados.contains(u['id_user']),
-                            onChanged: (checked) {
-                              setState(() {
-                                if (checked == true) {
-                                  if (!seleccionados.contains(u['id_user'])) {
-                                    seleccionados.add(u['id_user']);
-                                  }
-                                } else {
-                                  seleccionados.remove(u['id_user']);
-                                }
-                              });
-                            },
-                          ),
-                        )
-                        .toList(),
+                    children: usuariosActivos.map((u) {
+                      final nombre =
+                          (u['users'] != null && u['users']['username'] != null)
+                          ? u['users']['username']
+                          : u['id_user'].toString();
+                      return CheckboxListTile(
+                        title: Text(nombre),
+                        value: seleccionados.contains(u['id_user']),
+                        activeColor: Colors.teal.shade700,
+                        onChanged: (checked) {
+                          setState(() {
+                            if (checked == true) {
+                              if (!seleccionados.contains(u['id_user'])) {
+                                seleccionados.add(u['id_user']);
+                              }
+                            } else {
+                              seleccionados.remove(u['id_user']);
+                            }
+                          });
+                        },
+                      );
+                    }).toList(),
                   ),
               ],
               const SizedBox(height: 30),
               Center(
                 child: ElevatedButton.icon(
                   onPressed: _crearProyecto,
-                  icon: const Icon(Icons.add),
+                  icon: const Icon(Icons.add_location_alt_outlined),
                   label: const Text('Crear y Abrir Mapa'),
                   style: ElevatedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    backgroundColor: Colors.teal.shade700,
+                    elevation: 5,
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 24.0,
-                      vertical: 12.0,
+                      horizontal: 28.0,
+                      vertical: 14.0,
                     ),
                     textStyle: const TextStyle(fontSize: 16),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8.0),
+                      borderRadius: BorderRadius.circular(10.0),
                     ),
                   ),
                 ),

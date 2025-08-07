@@ -9,10 +9,11 @@ import 'dart:async';
 import 'package:geolocator/geolocator.dart' as geo_location_accuracy;
 import 'package:location/location.dart' hide LocationAccuracy;
 import 'package:background_locator_2/background_locator.dart';
-import 'package:background_locator_2/settings/android_settings.dart'as locator_android;
+import 'package:background_locator_2/settings/android_settings.dart'
+    as locator_android;
 import 'package:background_locator_2/settings/ios_settings.dart' as locator_ios;
-import 'package:background_locator_2/settings/locator_settings.dart' show LocationAccuracy;
-import 'package:background_locator_2/settings/android_settings.dart';
+import 'package:background_locator_2/settings/locator_settings.dart'
+    show LocationAccuracy;
 import '../services/location_callback_handler.dart';
 
 class MapaPage extends StatefulWidget {
@@ -71,13 +72,14 @@ class _MapaPageState extends State<MapaPage> {
         accuracy: LocationAccuracy.NAVIGATION,
         interval: 10,
         distanceFilter: 5,
-        androidNotificationSettings: AndroidNotificationSettings(
-          notificationChannelName: 'Ubicación en segundo plano',
-          notificationTitle: 'App de Mapeo Activa',
-          notificationMsg: 'Rastreo en segundo plano activo',
-          notificationIcon: '',
-          notificationIconColor: Colors.green,
-        ),
+        androidNotificationSettings:
+            locator_android.AndroidNotificationSettings(
+              notificationChannelName: 'Ubicación en segundo plano',
+              notificationTitle: 'App de Mapeo Activa',
+              notificationMsg: 'Rastreo en segundo plano activo',
+              notificationIcon: '',
+              notificationIconColor: Colors.green,
+            ),
       ),
     );
   }
@@ -440,8 +442,7 @@ class _MapaPageState extends State<MapaPage> {
               print('Error actualizando location: $e');
             }
           }
-        }
-    );
+        });
   }
 
   double _calcularArea() {
@@ -711,47 +712,68 @@ class _MapaPageState extends State<MapaPage> {
   }
 
   Positioned _buildFinalizarButton() {
+    final bool puedeFinalizar =
+        puntos.length > 2 &&
+        !finalizado &&
+        userIdActual == creadorId &&
+        !esMapaGeneralUsuarios;
+
     return Positioned(
       bottom: 20,
       right: 20,
-      child: ElevatedButton.icon(
-        onPressed:
-            (puntos.length > 2 &&
-                !finalizado &&
-                userIdActual == creadorId &&
-                !esMapaGeneralUsuarios)
-            ? () async {
-                if (puntos.isNotEmpty && puntos.first != puntos.last) {
-                  setState(() {
-                    puntos.add(puntos.first);
-                  });
-                  _dibujarPoligono();
-                }
-                final area = _calcularArea();
-                final puntoMedio = _calcularPuntoMedio();
-                final tipoFigura = _determinarTipoFigura();
-
-                try {
-                  await Supabase.instance.client
-                      .from('territories')
-                      .update({
-                        'area': area,
-                        'latitude': puntoMedio.latitude,
-                        'longitude': puntoMedio.longitude,
-                        'polygon': tipoFigura,
-                      })
-                      .eq('id', widget.proyectoId);
-
-                  if (context.mounted) {
-                    _mostrarModalFinalizar(context);
+      child: Tooltip(
+        message: puedeFinalizar
+            ? 'Finalizar y guardar el territorio'
+            : 'Agrega al menos 3 puntos para finalizar',
+        child: ElevatedButton.icon(
+          onPressed: puedeFinalizar
+              ? () async {
+                  if (puntos.isNotEmpty && puntos.first != puntos.last) {
+                    setState(() {
+                      puntos.add(puntos.first);
+                    });
+                    _dibujarPoligono();
                   }
-                } catch (e) {
-                  print('Error al finalizar el territorio: $e');
+
+                  final area = _calcularArea();
+                  final puntoMedio = _calcularPuntoMedio();
+                  final tipoFigura = _determinarTipoFigura();
+
+                  try {
+                    await Supabase.instance.client
+                        .from('territories')
+                        .update({
+                          'area': area,
+                          'latitude': puntoMedio.latitude,
+                          'longitude': puntoMedio.longitude,
+                          'polygon': tipoFigura,
+                        })
+                        .eq('id', widget.proyectoId);
+
+                    if (context.mounted) {
+                      _mostrarModalFinalizar(context);
+                    }
+                  } catch (e) {
+                    print('Error al finalizar el territorio: $e');
+                  }
                 }
-              }
-            : null,
-        icon: const Icon(Icons.check_circle),
-        label: const Text('Terminar'),
+              : null,
+          icon: const Icon(Icons.check_circle_outline),
+          label: const Text('Terminar'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.green,
+            foregroundColor: Colors.white,
+            elevation: 6,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            textStyle: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -761,114 +783,144 @@ class _MapaPageState extends State<MapaPage> {
 
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setStateDialog) {
-            return AlertDialog(
-              title: const Text('Finalizar Mapeo'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    height: 150,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: cargandoImagen
-                        ? const Center(child: CircularProgressIndicator())
-                        : const Center(
-                            child: Text(
-                              'Se generará una captura del mapa con las líneas y el área completa.',
-                              style: TextStyle(color: Colors.grey),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                  ),
-                ],
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
-              actions: [
-                ElevatedButton(
-                  onPressed: () async {
-                    setStateDialog(() => cargandoImagen = true);
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    cargandoImagen
+                        ? const CircularProgressIndicator()
+                        : const Icon(
+                            Icons.check_circle_outline,
+                            size: 60,
+                            color: Colors.green,
+                          ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Proyecto Finalizado',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Se generará una captura del mapa con las líneas y el área completa.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              setStateDialog(() => cargandoImagen = true);
 
-                    try {
-                      setState(() => finalizado = true);
-                      _dibujarPoligonoConZIndex();
+                              try {
+                                setState(() => finalizado = true);
+                                _dibujarPoligonoConZIndex();
 
-                      final Set<Marker> marcadoresOriginales = Set.from(
-                        _marcadores,
-                      );
-                      setState(() => _marcadores.clear());
+                                final Set<Marker> marcadoresOriginales =
+                                    Set.from(_marcadores);
+                                setState(() => _marcadores.clear());
 
-                      final area = _calcularArea();
-                      final puntoMedio = _calcularCentro(puntos);
-                      final zoom = _determinarZoomDesdeArea(area);
+                                final area = _calcularArea();
+                                final puntoMedio = _calcularCentro(puntos);
+                                final zoom = _determinarZoomDesdeArea(area);
 
-                      await mapController?.animateCamera(
-                        CameraUpdate.newLatLngZoom(puntoMedio, zoom),
-                      );
+                                await mapController?.animateCamera(
+                                  CameraUpdate.newLatLngZoom(puntoMedio, zoom),
+                                );
 
-                      final Uint8List? captura = await mapController
-                          ?.takeSnapshot();
+                                final Uint8List? captura = await mapController
+                                    ?.takeSnapshot();
 
-                      setState(() => _marcadores.addAll(marcadoresOriginales));
+                                setState(
+                                  () =>
+                                      _marcadores.addAll(marcadoresOriginales),
+                                );
 
-                      if (captura != null) {
-                        final fileName =
-                            'mapa_id_${widget.proyectoId}_${DateTime.now().millisecondsSinceEpoch}.png';
+                                if (captura != null) {
+                                  final fileName =
+                                      'mapa_id_${widget.proyectoId}_${DateTime.now().millisecondsSinceEpoch}.png';
 
-                        await Supabase.instance.client.storage
-                            .from('bucket-mapas')
-                            .uploadBinary(fileName, captura);
+                                  await Supabase.instance.client.storage
+                                      .from('bucket-mapas')
+                                      .uploadBinary(fileName, captura);
 
-                        final imageUrl = Supabase.instance.client.storage
-                            .from('bucket-mapas')
-                            .getPublicUrl(fileName);
+                                  final imageUrl = Supabase
+                                      .instance
+                                      .client
+                                      .storage
+                                      .from('bucket-mapas')
+                                      .getPublicUrl(fileName);
 
-                        await Supabase.instance.client
-                            .from('territories')
-                            .update({
-                              'imagen_poligono': imageUrl,
-                              'finalizado': true,
-                            })
-                            .eq('id', widget.proyectoId);
+                                  await Supabase.instance.client
+                                      .from('territories')
+                                      .update({
+                                        'imagen_poligono': imageUrl,
+                                        'finalizado': true,
+                                      })
+                                      .eq('id', widget.proyectoId);
 
-                        if (context.mounted) {
-                          Navigator.pushNamedAndRemoveUntil(
-                            context,
-                            '/home',
-                            (route) => false,
-                          );
-                        }
-                      } else {
-                        throw Exception('No se pudo capturar el mapa');
-                      }
-                    } catch (e) {
-                      print('Error al capturar o subir la imagen: $e');
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Error al capturar o subir la imagen',
+                                  if (context.mounted) {
+                                    Navigator.pop(context); // Cierra el modal
+                                    Navigator.pushNamedAndRemoveUntil(
+                                      context,
+                                      '/home',
+                                      (route) => false,
+                                    );
+                                  }
+                                } else {
+                                  throw Exception(
+                                    'No se pudo capturar el mapa',
+                                  );
+                                }
+                              } catch (e) {
+                                print(
+                                  'Error al capturar o subir la imagen: $e',
+                                );
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Error al capturar o subir la imagen',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              } finally {
+                                setStateDialog(() => cargandoImagen = false);
+                              }
+                            },
+                            icon: const Icon(Icons.upload_rounded),
+                            label: const Text('Capturar y Subir'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
                             ),
                           ),
-                        );
-                      }
-                    } finally {
-                      setStateDialog(() => cargandoImagen = false);
-                    }
-                  },
-                  child: const Text('Capturar y Subir'),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => Navigator.of(context).pop(),
+                            icon: const Icon(Icons.arrow_back),
+                            label: const Text('Regresar'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text('Regresar al Proyecto'),
-                ),
-              ],
+              ),
             );
           },
         );

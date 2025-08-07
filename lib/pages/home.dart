@@ -71,11 +71,7 @@ class _HomePageState extends State<HomePage> {
       if (existe == null) {
         await Supabase.instance.client.rpc(
           'registrar_usuario',
-          params: {
-            'p_id_user': uid,
-            'p_email': email,
-            'p_username': username,
-          },
+          params: {'p_id_user': uid, 'p_email': email, 'p_username': username},
         );
 
         print('✅ Usuario registrado en la tabla users');
@@ -114,13 +110,21 @@ class _HomePageState extends State<HomePage> {
     }
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mapeo de Terrenos'),
+        backgroundColor: Colors.teal.shade700,
+        title: const Text(
+          '📍 Mapeo de Terrenos',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+            color: Colors.white,
+          ),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
+            tooltip: 'Actualizar',
             onPressed: () {
               setState(() {
-                // Refrescar invitaciones y proyectos al pulsar refresh
                 if (userIdActual != null) {
                   invitacionesFuture = _obtenerInvitaciones(userIdActual!);
                 }
@@ -129,6 +133,7 @@ class _HomePageState extends State<HomePage> {
           ),
           IconButton(
             icon: const Icon(Icons.logout),
+            tooltip: 'Cerrar sesión',
             onPressed: () async {
               try {
                 await FlutterForegroundTask.stopService();
@@ -160,6 +165,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
+
       body: IndexedStack(
         index: _paginaActual,
         children: [
@@ -172,23 +178,29 @@ class _HomePageState extends State<HomePage> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _paginaActual,
         onTap: (index) => setState(() => _paginaActual = index),
+        selectedItemColor: Colors.teal.shade700,
+        unselectedItemColor: Colors.grey,
+        showUnselectedLabels: true,
+        type: BottomNavigationBarType.fixed,
         items: [
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.folder),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.folder_open, size: 26),
             label: 'Mis Proyectos',
           ),
-          const BottomNavigationBarItem(
-            icon: Icon(Icons.mail),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.mark_email_unread, size: 26),
             label: 'Invitaciones',
           ),
-          const BottomNavigationBarItem(icon: Icon(Icons.add), label: 'Nuevo'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.add_circle_outline, size: 26),
+            label: 'Nuevo',
+          ),
           if (rolUsuario == 'administrador')
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.supervisor_account),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.manage_accounts, size: 26),
               label: 'Usuarios',
             ),
         ],
-        type: BottomNavigationBarType.fixed,
       ),
     );
   }
@@ -296,31 +308,40 @@ class _HomePageState extends State<HomePage> {
     required BuildContext context,
   }) {
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: ListTile(
-        title: Text(territorio['nombre'] ?? ''),
-        subtitle: Column(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Descripción: ${territorio['properties'] ?? ''}'),
             Text(
-              'Colaborativo: ${territorio['colaborativo'] == true ? 'Sí' : 'No'}',
+              territorio['nombre'] ?? '',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+                color: Colors.teal.shade800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text('📝 ${territorio['properties'] ?? ''}'),
+            Text(
+              '👥 Colaborativo: ${territorio['colaborativo'] == true ? 'Sí' : 'No'}',
             ),
             Text(
-              'Área: ${territorio['area'] != null ? '${(territorio['area'] as num).toStringAsFixed(2)} m²' : 'No calculada'}',
+              '📐 Área: ${territorio['area'] != null ? '${(territorio['area'] as num).toStringAsFixed(2)} m²' : 'No calculada'}',
             ),
-            Text(
-              'Fecha creación: ${_formatearFecha(territorio['created_at'])}',
-            ),
+            Text('📅 Fecha: ${_formatearFecha(territorio['created_at'])}'),
             if (territorio['imagen_poligono'] != null &&
                 (territorio['imagen_poligono'] as String).isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 8.0),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(10),
                   child: Image.network(
                     territorio['imagen_poligono'],
-                    height: 120,
+                    height: 100,
                     width: double.infinity,
                     fit: BoxFit.cover,
                     errorBuilder: (context, error, stackTrace) =>
@@ -328,13 +349,15 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
               ),
-          ],
-        ),
-        isThreeLine: true,
-        trailing: esFinalizado
-            ? const Icon(Icons.lock, color: Colors.grey)
-            : IconButton(
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.bottomRight,
+              child: TextButton.icon(
                 icon: const Icon(Icons.map),
+                label: const Text('Ver Mapa'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.teal.shade600,
+                ),
                 onPressed: () {
                   Navigator.push(
                     context,
@@ -347,6 +370,9 @@ class _HomePageState extends State<HomePage> {
                   );
                 },
               ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -359,7 +385,8 @@ class _HomePageState extends State<HomePage> {
           return const Center(child: CircularProgressIndicator());
         } else if (snapshot.hasError) {
           return Center(
-              child: Text('Error al cargar invitaciones: ${snapshot.error}'));
+            child: Text('Error al cargar invitaciones: ${snapshot.error}'),
+          );
         } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
           return const Center(child: Text('No tienes invitaciones aún'));
         }
