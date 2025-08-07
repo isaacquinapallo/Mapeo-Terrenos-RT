@@ -6,27 +6,27 @@ Esta aplicación permite a los usuarios visualizar en tiempo real la ubicación 
 
 ## Funcionalidades implementadas
 
-- **Login de usuarios**  
+- **Inicio de sesión y registro de usuarios**  
   Validación de usuarios para acceso seguro.
 
-- **Sistema de administración (web/móvil)**  
+- **Sistema de administración**  
   - Agregar, editar, desactivar usuarios y administradores.  
   - Visualizar ubicación en tiempo real de todos los topógrafos.
 
 - **Visualización de terrenos**  
-  - Polígonos definidos manualmente o automáticamente.  
+  - Polígonos definidos automáticamente.  
   - Cálculo del área de los terrenos.  
   - Visualización de características y ubicación exacta.
 
 - **Geolocalización en tiempo real**  
-  - Uso de Google Maps para mostrar ubicación actual.  
+  - Uso de Google Maps para mostrar ubicación actual en un mapa preciso.  
   - Funciona en segundo plano, incluso cuando la app se minimiza.
 
 - **Documentación y código en GitHub**  
   - Incluye capturas, video explicativo y archivo `.apk`.
 
 - **Publicación en tienda de aplicaciones**  
-  - Versión publicada en Google Play o tienda interna.
+  - Versión publicada en Google Play o tienda interna. (Proximamente)
 
 ---
 
@@ -47,11 +47,12 @@ En Progreso
 
 ## Tecnologías utilizadas
 
-- Flutter + Supabase (Frontend y backend)
-- Google Maps Flutter
-- Dart
-- Supabase PostgREST & RLS Policies
-- GitHub para control de versiones
+- **Flutter**
+- **Supabase** (base de datos, auth y buckets)
+- **Google Maps**
+- **Geolocalización**
+- **Background location tracking**
+- **Permisos nativos**
 
 ---
 
@@ -73,12 +74,3 @@ Duración: 10 minutos
 
 - Entrega: `04/08/2025`  
 - Defensa: `07/08/2025`  
-- Oficina 28 – Revisión de entregables
-
----
-
-## 📎 Archivos importantes
-
-- `app-release.apk` – [Descargar APK](./apk/app-release.apk)
-- `README.md` – Este archivo
-- Código fuente – En este repositorio
