@@ -1,5 +1,8 @@
 # Aplicación de Geolocalización de Topógrafos (mapeo_terrenos_rt)
+
 APK LINK: https://drive.google.com/file/d/1iw1iiny27YwXzN1F6d1gA2D6vcaPpo-k/view?usp=drive_link
+
+
 Esta aplicación permite a los usuarios visualizar en tiempo real la ubicación de sus compañeros topógrafos sobre un mapa, además de registrar y gestionar terrenos con cálculo de área y seguimiento colaborativo.
 
 ---
